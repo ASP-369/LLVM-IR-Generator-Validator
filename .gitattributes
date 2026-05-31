@@ -1,0 +1,27 @@
+# Git Line Ending Configuration
+# Ensures consistent line endings across platforms
+
+# Shell scripts - always LF (Unix)
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Python - always LF
+*.py text eol=lf
+
+# Jupyter Notebooks - always LF
+*.ipynb text eol=lf
+
+# Documentation - always LF
+*.md text eol=lf
+*.txt text eol=lf
+
+# LLVM IR files - always LF
+*.ll text eol=lf
+
+# Windows files - always CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Auto-normalize on commit
+*.sh diff=shell
+*.py diff=python

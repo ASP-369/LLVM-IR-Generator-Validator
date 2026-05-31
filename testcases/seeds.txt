@@ -1,0 +1,15 @@
+fibonacci sequence with loops
+add two numbers
+bubble sort algorithm on array
+factorial using recursion
+calculate GCD using Euclidean algorithm
+count even numbers from 1 to 100
+check if number is prime
+sum array elements
+reverse string in place
+compute maximum element in array
+simple multiplication
+nested loop with conditionals
+function that swaps two numbers
+compute power of two
+loop with break condition
