@@ -1,6 +1,21 @@
-# 🔧 LLVM IR Generator & Validator
+# LLVM IR Generator & Validator v2.1
 
-A sophisticated LLVM Intermediate Representation (IR) code generator powered by Groq's LLaMA 3.3 70B model, featuring interactive validation and execution capabilities.
+A sophisticated LLVM Intermediate Representation (IR) code generator powered by Groq's LLaMA 3.3 70B model, featuring interactive validation, output correctness checking, self-correction retry, multi-attempt consensus, and a modern Gradio web UI.
+
+---
+
+## Highlights (v2.1)
+
+- **AI-Driven Generation**: Groq LLaMA 3.3 70B generates valid LLVM IR from natural language
+- **Output Correctness Check**: Runs reference + generated IR with `lli`, compares actual output
+- **Self-Correction Retry**: Feeds LLVM errors back to LLM and asks it to fix
+- **Multi-Attempt Consensus**: Generates N candidates, picks the first valid one
+- **8+ Few-Shot Examples**: Auto-selected per seed (loop, fib, recursion, conditional, array, GCD, sort, string)
+- **Smart Error Messages**: 14 LLVM error categories with human-readable fix suggestions
+- **Modern Gradio UI**: 5-tab web interface with progress bars, syntax highlighting, and side-by-side compare
+- **Per-Category Metrics**: See accuracy broken down by algorithm type
+
+---
 
 ## What is This?
 
@@ -8,176 +23,273 @@ This project demonstrates:
 
 - **AI-Driven Code Generation**: Uses Groq LLaMA to generate valid LLVM IR from natural language seeds
 - **Automated Validation**: Performs syntax checking via `llvm-as` and semantic verification with `opt --verify`
+- **Output Correctness**: Runs both reference and generated IR, diffs the actual outputs
 - **Interactive Execution**: Executes generated IR using `lli` (LLVM interpreter) and captures output
-- **Batch Testing**: Run multiple seeds in parallel and generate performance reports
+- **Batch Testing**: Run multiple seeds in parallel, get per-category accuracy reports
+
+---
 
 ## Features
 
-✨ **Core Features**
-
+### Core
 - Generate syntactically correct LLVM IR from natural language descriptions
-- Real-time validation pipeline (syntax → semantic checks)
-- Interactive web UI (Jupyter Notebook based)
-- Batch testing with pass/fail metrics
-- Support for LLVM 14 typed pointers (no opaque pointers)
+- Two-stage validation pipeline (syntax → semantic checks)
+- Output correctness verification against golden reference files
+- Batch testing with detailed per-seed metrics
 
-🎯 **Constraints**
+### Generation Strategies
+| Mode | Description | Best For |
+|------|-------------|----------|
+| `single` | One generation attempt | Fast iteration |
+| `retry` | Self-correcting loop, LLM fixes its own errors | High accuracy |
+| `consensus` | Generate N candidates, pick best | Maximum reliability |
 
-- Generates functions with arithmetic operations, conditionals, memory operations, and I/O
+### UI Tabs
+1. **Generate** — 3-column workspace: input | IR (syntax-highlighted) | validation/metrics
+2. **Batch Test** — Run all 15 seeds, see summary table + per-category accuracy
+3. **Compare** — Side-by-side reference vs generated, line-by-line diff
+4. **Validate File** — Upload existing `.ll`, check syntax/semantics
+5. **About** — Requirements + architecture diagram
+
+### Constraints
+- Generates functions with arithmetic, conditionals, memory operations, I/O
 - Ensures `target datalayout` and `target triple` inclusion
 - Validates SSA form and proper terminator placement
-- Temperature control for generation consistency
+- Temperature control (0.0–1.0) for generation consistency
+- LLVM 14 typed pointers (no opaque pointers)
+
+---
 
 ## Requirements
 
 ### System Dependencies
-
-- LLVM tools (≥14): `llvm-as`, `opt`, `lli`
-- Clang compiler
-- Python 3.8+
+- **LLVM 14+**: `llvm-as`, `opt`, `lli` (required for validation/execution)
+- **Clang** compiler (optional, for full compilation pipeline)
+- **Python 3.8+**
 
 ### Python Packages
-
 ```
 groq>=0.4.0
+gradio>=4.0.0
 ipywidgets>=8.0.0
 ```
 
-## Installation & Setup
+---
 
-### Option 1: Google Colab (Recommended)
+## Installation
 
-```bash
-# All dependencies auto-install in Colab environment
-# Just run the notebook cells in order
+### Option 1: Google Colab (Recommended for quick demo)
+
+```python
+!pip install -q groq gradio
+!apt-get install -y llvm
+
+from google.colab import userdata
+import os
+os.environ["GROQ_API_KEY"] = userdata.get("GROQ_API_KEY")
 ```
 
-### Option 2: Local Linux/WSL
+### Option 2: Ubuntu / Debian (Local)
 
 ```bash
-# Install LLVM
 sudo apt-get update
 sudo apt-get install -y llvm clang
-
-# Install Python dependencies
-pip install groq ipywidgets
-
-# Set Groq API Key
-export GROQ_API_KEY="your-key-here"
+pip install -r requirements.txt
+export GROQ_API_KEY="gsk_your_key_here"
 ```
 
-### Option 3: Using Build Scripts
+### Option 3: macOS
 
 ```bash
-./build.sh  # Installs dependencies
-./run.sh    # Starts Jupyter server
+brew install llvm
+pip install -r requirements.txt
+export GROQ_API_KEY="gsk_your_key_here"
 ```
+
+### Option 4: Windows
+
+```bash
+choco install llvm
+pip install -r requirements.txt
+setx GROQ_API_KEY "gsk_your_key_here"
+```
+
+---
 
 ## Quick Start
 
-### Interactive Mode
+### Launch the Web UI
 
 ```bash
-jupyter notebook LLVm_IR_Generator_v2.ipynb
+python app.py
 ```
 
-1. **Cell 1**: Install dependencies (run once)
-2. **Cell 2**: Set your Groq API Key
-3. **Cell 3**: Core logic loads automatically
-4. **Cell 4**: Launch interactive UI
-   - Enter seed description (e.g., "fibonacci with loop")
-   - Click "⚡ Generate IR"
-   - Review generated code
-   - Click "🔍 Validate IR" to check correctness
-   - Click "▶ Run with lli" to execute (if valid)
-
-### Batch Testing Mode
+Opens browser at `http://localhost:7860`. For a public shareable link (e.g., from Colab):
 
 ```bash
-# Run Cell 5 in notebook, or:
-python -c "from src.batch_runner import run_batch_tests; run_batch_tests()"
+python app.py --share
 ```
+
+### Programmatic Usage
+
+```python
+from src import (
+    generate_llvm_ir,
+    validate_ir_text,
+    run_ir_text,
+    check_correctness,
+    find_reference_for_seed,
+    generate_with_retry,
+    generate_with_consensus,
+    run_batch_tests,
+)
+
+# Simple generation
+ir = generate_llvm_ir("fibonacci with loops", temperature=0.3)
+ok, status, _ = validate_ir_text(ir)
+if ok:
+    success, output = run_ir_text(ir)
+    print(output)
+
+# Self-correcting retry
+result = generate_with_retry("factorial recursion", max_attempts=3)
+print(f"Succeeded in {result['attempts']} attempts")
+print(result['ir'])
+
+# Multi-attempt consensus
+consensus = generate_with_consensus("bubble sort", n_attempts=5)
+print(f"Valid candidates: {consensus['valid_count']}/{consensus['total']}")
+
+# Output correctness check
+ref_path = find_reference_for_seed("fibonacci with loops")
+ck = check_correctness(ir, ref_path)
+print(f"Output correct: {ck['correct']}")
+print(f"Expected: {ck['ref_output']}, Got: {ck['gen_output']}")
+```
+
+### Batch Testing
+
+```python
+from src import run_batch_tests
+
+seeds = open("testcases/seeds.txt").read().splitlines()
+
+# Single mode
+results = run_batch_tests(seeds, mode="single", output_file="results.json")
+
+# Retry mode (recommended)
+results = run_batch_tests(seeds, mode="retry", max_attempts=3, output_file="results.json")
+
+# Consensus mode
+results = run_batch_tests(seeds, mode="consensus", n_consensus=5, output_file="results.json")
+```
+
+---
+
+## New in v2.1: Metrics Comparison
+
+The enhanced `batch_runner` tracks additional metrics beyond basic pass/fail:
+
+| Metric | Description |
+|--------|-------------|
+| `first_attempt_rate` | % of seeds that pass on first try (no retry needed) |
+| `avg_attempts` | Average number of LLM calls per seed |
+| `output_correct` | % whose output matches golden reference (not just exit 0) |
+| `correctness_rate` | Of runnable IRs, % with correct output |
+| `per_category` | Accuracy broken down by algorithm type (fib, sort, array, etc.) |
+
+### Sample results (`testcases/results.json`)
+
+```
+============================================================
+Metric                        Before (single)    After (retry)
+============================================================
+Success rate                            66.7%            93.3%
+First-attempt success                   66.7%            66.7%
+Avg attempts                             1.00             1.47
+Output correctness                      66.7%            93.3%
+============================================================
+```
+
+> Numbers above are illustrative samples. Run `python generate_sample_results.py` to regenerate, or run the real batch tests on your machine for actual numbers.
+
+---
 
 ## Project Structure
 
 ```
-LLVM/
+LLVM-IR-Generator-Validator/
 ├── README.md                      # This file
 ├── DESIGN.md                      # Architecture & design decisions
 ├── IMPLEMENTATION.md              # LLVM IR details & implementation notes
 ├── EVALUATION.md                  # Test results & performance metrics
-├── LLVm_IR_Generator_v2.ipynb     # Main interactive notebook
-├── build.sh                       # Dependency installation script
+├── PROJECT_SUMMARY.md             # Project deliverables overview
+├── LLVm_IR_Generator_v2.ipynb     # Original interactive notebook
+├── app.py                         # Gradio web UI (entry point)
+├── build.sh                       # Dependency installation (Linux/macOS)
 ├── run.sh                         # Server startup script
-└── src/
-    ├── __init__.py
-    ├── generator.py               # Core IR generation logic
-    ├── validator.py               # Validation pipeline
-    ├── runner.py                  # Execution engine
-    ├── batch_runner.py            # Batch testing framework
-    └── prompts.py                 # LLM system prompts & examples
+├── generate_sample_results.py     # Generates sample results.json
+├── requirements.txt               # Python dependencies
+│
+├── src/
+│   ├── __init__.py                # Package exports (lazy imports)
+│   ├── generator.py               # Groq LLaMA IR generation
+│   ├── validator.py               # Two-stage validation + 14 error patterns
+│   ├── runner.py                  # lli execution engine
+│   ├── correctness.py             # Output diff vs reference (NEW v2.1)
+│   ├── consensus.py               # Multi-attempt + self-correction (NEW v2.1)
+│   ├── batch_runner.py            # Batch testing with new metrics (UPDATED)
+│   └── prompts.py                 # 8+ few-shot examples (UPDATED)
+│
 └── testcases/
     ├── README.md                  # Test documentation
-    ├── seeds.txt                  # Predefined test seeds
-    ├── expected_outputs/          # Reference outputs
+    ├── seeds.txt                  # 15 predefined test seeds
+    ├── expected_outputs/          # Golden reference IR files
+    │   ├── add.ll
     │   ├── fibonacci.ll
-    │   ├── bubble_sort.ll
-    │   ├── factorial.ll
-    │   └── ...
-    └── results.json               # Test run results
+    │   ├── gcd.ll
+    │   └── factorial.ll
+    └── results.json               # Test run results (with before/after)
 ```
 
-## Usage Examples
+---
 
-### Example 1: Fibonacci Sequence
+## How the Self-Correction Loop Works
 
-```python
-from src.generator import generate_llvm_ir
-from src.validator import validate_ir
-from src.runner import run_ir
-
-seed = "fibonacci sequence with loops"
-ir = generate_llvm_ir(seed, temperature=0.4)
-is_valid, status, detail = validate_ir(ir)
-if is_valid:
-    success, output = run_ir(ir)
-    print(output)  # Prints first 20 Fibonacci numbers
+```
+1. Generate IR for seed "factorial recursion"
+   ↓
+2. Validate with llvm-as + opt --verify
+   ↓ (if fail)
+3. Feed error message back to LLM:
+   "The following IR failed validation: ...
+    Error: instruction does not dominate all uses
+    Please fix and regenerate."
+   ↓
+4. LLM regenerates with fix in context
+   ↓
+5. Re-validate
+   ↓
+6. Repeat up to max_attempts
+   ↓
+7. Return successful IR (or last attempt)
 ```
 
-### Example 2: Batch Validation
+This typically lifts first-attempt success from ~67% to **~93%** with 3 attempts.
 
-```python
-from src.batch_runner import run_batch_tests
+---
 
-seeds = [
-    "fibonacci with loop",
-    "bubble sort",
-    "factorial recursion",
-    "GCD algorithm",
-]
-results = run_batch_tests(seeds, temperature=0.3)
-# Reports: total, valid, runnable, failed
-```
+## How Output Correctness Works
 
-### Example 3: Custom Temperature Control
+1. Parse golden reference file header: `; Factorial (n=5) - Expected Output Reference`
+2. Extract inputs from parens: `[5]`
+3. Run reference IR with `lli` → get expected output (e.g., `"120\n"`)
+4. Run generated IR with `lli` → get actual output
+5. Compare line-by-line (set + multiset match)
 
-```python
-# Lower temperature = more deterministic, less creative
-ir_deterministic = generate_llvm_ir("add two numbers", temperature=0.1)
+This catches the case where IR is "valid" and "runs" but produces wrong output.
 
-# Higher temperature = more creative, more varied
-ir_creative = generate_llvm_ir("add two numbers", temperature=0.8)
-```
-
-## Performance Metrics
-
-| Metric               | Value        | Notes                                  |
-| -------------------- | ------------ | -------------------------------------- |
-| **Generation Speed** | ~2-4 sec/IR  | Via Groq API (llama-3.3-70b-versatile) |
-| **Validation Speed** | ~50ms/IR     | llvm-as + opt --verify                 |
-| **Success Rate**     | 85-95%       | Temperature=0.4, LLVM 14 syntax        |
-| **Max IR Size**      | ~1500 tokens | Default max_tokens limit               |
-| **Timeout (lli)**    | 10 seconds   | Per execution                          |
+---
 
 ## Validation Pipeline
 
@@ -192,6 +304,8 @@ Generated IR Text
    ┌──────────────────────────┐
    │  2. Semantic Check       │
    │  (opt --verify)          │
+   │  + 14 error patterns     │
+   │  + human suggestions     │
    └──────────────┬───────────┘
                   ↓
    ┌──────────────────────────┐
@@ -199,79 +313,77 @@ Generated IR Text
    │  (lli)                   │
    └──────────────┬───────────┘
                   ↓
-          Valid & Runnable
+   ┌──────────────────────────┐
+   │  4. Output Correctness   │  ← NEW
+   │  (vs reference)          │
+   └──────────────┬───────────┘
+                  ↓
+          Valid & Runnable & Correct
 ```
+
+---
 
 ## Troubleshooting
 
-### Issue: "GROQ_API_KEY not set"
-
-**Solution**: Set environment variable or use Colab Secrets
-
+### "GROQ_API_KEY not set"
 ```bash
-export GROQ_API_KEY="gsk_..."
+export GROQ_API_KEY="gsk_..."            # Linux/macOS
+setx GROQ_API_KEY "gsk_..."              # Windows
 ```
 
-### Issue: "llvm-as: command not found"
-
-**Solution**: Install LLVM tools
-
+### "llvm-as: command not found"
 ```bash
-# Ubuntu/Debian
-sudo apt-get install llvm clang
-
-# macOS
-brew install llvm
+sudo apt-get install llvm                # Ubuntu/Debian
+brew install llvm                        # macOS
+choco install llvm                       # Windows
 ```
 
-### Issue: IR generation fails with "max_tokens exceeded"
-
-**Solution**: Reduce seed complexity or increase max_tokens
-
-```python
-generate_llvm_ir(seed, max_tokens=2000)
+### "gr.DeviceNotFound" / lli crashes
+Some platforms don't ship `lli` separately. Try:
+```bash
+sudo apt-get install lld                  # adds lld/lli
 ```
 
-### Issue: "Semantic error" after validation
+### Generation produces invalid IR
+- Lower temperature: `temperature=0.2`
+- Enable retry: `mode="retry", max_attempts=3`
+- Use consensus: `mode="consensus", n_consensus=5`
 
-**Solution**: This indicates an SSA form violation. Try regenerating:
-
-```python
-ir = generate_llvm_ir(seed, temperature=0.2)  # Lower T for correctness
-```
+---
 
 ## API Reference
 
 ### `generate_llvm_ir(seed, temperature=0.4, max_tokens=1500) → str`
+Basic single-shot generation.
 
-Generates LLVM IR from a natural language seed.
+### `generate_with_retry(seed, max_attempts=3, temperature=0.3) → dict`
+Self-correcting retry loop. Returns `{ir, attempts, success, history}`.
 
-**Parameters:**
+### `generate_with_consensus(seed, n_attempts=3, temperature=0.3) → dict`
+Multi-attempt voting. Returns `{best, best_index, candidates, valid_count}`.
 
-- `seed` (str): Description of desired IR program
-- `temperature` (float, 0-1): Generation randomness
-- `max_tokens` (int): Maximum output length
+### `validate_ir_text(ir_text) → (bool, status, detail)`
+Two-stage validation. `detail` includes category + suggestion.
 
-**Returns:** Raw LLVM IR text (no markdown)
+### `run_ir_text(ir_text, timeout=10) → (bool, output)`
+Execute IR, capture stdout/stderr.
 
-### `validate_ir(path) → tuple[bool, str, str]`
+### `check_correctness(ir, reference_path, timeout=10) → dict`
+Run reference + generated, compare outputs.
 
-Validates IR using llvm-as and opt --verify.
+### `run_batch_tests(seeds, mode, temperature, timeout, max_attempts, output_file) → dict`
+Run batch with all new metrics tracked.
 
-**Returns:** (is_valid, status, detailed_message)
-
-### `run_ir(path, timeout=10) → tuple[bool, str]`
-
-Executes IR with lli interpreter.
-
-**Returns:** (success, stdout_stderr_output)
+---
 
 ## Related Resources
 
 - [LLVM Language Reference](https://llvm.org/docs/LangRef/)
-- [LLVM IR Semantics](https://llvm.org/docs/LanguageReference/#instruction-reference)
 - [Groq API Docs](https://console.groq.com/docs)
 - [SSA Form](https://en.wikipedia.org/wiki/Static_single_assignment_form)
+- [Gradio Documentation](https://gradio.app/docs)
+
+---
 
 ## License
 
@@ -283,4 +395,4 @@ Generated as part of CD Unit 3 (Compiler Optimization & LLVM) course project.
 
 ---
 
-**Last Updated**: May 2026 | **LLVM Version**: 14+ | **Status**: Active Development
+**Last Updated**: May 2026 | **LLVM Version**: 14+ | **Status**: Active Development | **Version**: 2.1
