@@ -110,11 +110,11 @@ def do_generate(
 ) -> tuple:
     """Generate IR, validate, run, check correctness."""
     if not seed or not seed.strip():
-        return "ERROR: seed is empty", "", "", "", "", "", None
+        return "ERROR: seed is empty", "", "", "", "", None
     if not _has_api_key():
         return (
             "ERROR: GROQ_API_KEY not set. Run: set GROQ_API_KEY=your_key",
-            "", "", "", "", "", None,
+            "", "", "", "", None,
         )
 
     started = time.time()
@@ -140,16 +140,16 @@ def do_generate(
             metrics["attempts"] = 1
             history_md = "- **Attempt 1**: Single-shot generation"
         except Exception as e:
-            return f"Generation error: {e}", "", "", "", "", history_md or "", None
+            return f"Generation error: {e}", "", "", "", history_md or "", None
 
     metrics["gen_time_sec"] = round(time.time() - started, 2)
 
     if not ir:
-        return "ERROR: no IR generated", "", "", "", metrics_html(metrics), history_md, None
+        return "ERROR: no IR generated", "", "", metrics_html(metrics), history_md, None
 
     progress(0.6, desc="Validating IR (llvm-as + opt --verify)...")
     val_start = time.time()
-    ok, status, detail = validate_ir_text(ir)
+    ok, status, detail = validate_ir_text(ir, require_main=True)
     metrics["val_time_sec"] = round(time.time() - val_start, 3)
     metrics["valid"] = ok
     metrics["validation_status"] = status
@@ -203,7 +203,6 @@ def do_generate(
         ir,
         val_html,
         run_html,
-        output_text,
         metrics_html(metrics),
         history_md,
         download_path,
@@ -296,7 +295,7 @@ def do_compare(seed: str, temperature: float) -> tuple:
     except Exception as e:
         return f"Generation error: {e}", ref_ir, "", ""
 
-    ok, status, detail = validate_ir_text(gen_ir)
+    ok, status, detail = validate_ir_text(gen_ir, require_main=True)
     val_html = _format_validation(ok, status, detail)
 
     diff_lines = []
@@ -351,7 +350,32 @@ EXAMPLE_SEEDS = [
 
 
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="LLVM IR Generator & Validator", theme=gr.themes.Soft(), css=CUSTOM_CSS) as demo:
+    custom_theme = gr.themes.Soft(
+        primary_hue="indigo",
+        secondary_hue="blue",
+        neutral_hue="slate",
+        font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
+    ).set(
+        body_background_fill="linear-gradient(to bottom right, #0f172a, #1e1b4b)",
+        body_background_fill_dark="linear-gradient(to bottom right, #0f172a, #1e1b4b)",
+        block_background_fill="rgba(30, 41, 59, 0.7)",
+        block_background_fill_dark="rgba(30, 41, 59, 0.7)",
+        block_border_width="1px",
+        block_border_color="rgba(255, 255, 255, 0.1)",
+        block_border_color_dark="rgba(255, 255, 255, 0.1)",
+        block_shadow="0 8px 32px 0 rgba(0, 0, 0, 0.3)",
+        button_primary_background_fill="linear-gradient(to right, #4f46e5, #7c3aed)",
+        button_primary_background_fill_dark="linear-gradient(to right, #4f46e5, #7c3aed)",
+        button_primary_border_color="transparent",
+        button_primary_border_color_dark="transparent",
+        button_primary_text_color="white",
+        button_primary_text_color_dark="white",
+        input_background_fill="rgba(15, 23, 42, 0.6)",
+        input_background_fill_dark="rgba(15, 23, 42, 0.6)",
+        input_border_color="rgba(255, 255, 255, 0.2)",
+    )
+
+    with gr.Blocks(title="LLVM IR Generator", theme=custom_theme) as demo:
         gr.HTML("""
         <div class="header">
             <h1>LLVM IR Generator & Validator</h1>
@@ -375,16 +399,11 @@ def build_ui() -> gr.Blocks:
                 with gr.Row():
                     with gr.Column(scale=1):
                         gr.Markdown("### Input")
-                        seed_in = gr.Textbox(
-                            label="Seed description",
-                            placeholder="e.g. fibonacci sequence with loops",
-                            value="fibonacci sequence with loops",
-                            lines=2,
-                        )
-                        gr.Examples(
-                            examples=[[s] for s in EXAMPLE_SEEDS],
-                            inputs=[seed_in],
-                            label="Quick seeds",
+                        seed_in = gr.Dropdown(
+                            choices=EXAMPLE_SEEDS,
+                            value=EXAMPLE_SEEDS[0],
+                            allow_custom_value=True,
+                            label="Choose a program to generate (Seed)",
                         )
                         with gr.Accordion("Advanced settings", open=False):
                             temp_slider = gr.Slider(
@@ -409,7 +428,7 @@ def build_ui() -> gr.Blocks:
                         gr.Markdown("### Generated LLVM IR")
                         ir_out = gr.Code(
                             label="LLVM IR (click to copy)",
-                            language="llvm",
+                            language="cpp",
                             lines=18,
                             interactive=True,
                         )
@@ -433,7 +452,7 @@ def build_ui() -> gr.Blocks:
                 gen_btn.click(
                     fn=do_generate,
                     inputs=[seed_in, temp_slider, tokens_slider, use_retry, attempts_slider],
-                    outputs=[ir_out, val_html, run_html, ir_out, metrics_panel, history_md, download_btn],
+                    outputs=[ir_out, val_html, run_html, metrics_panel, history_md, download_btn],
                 )
 
             # ---- TAB 2: BATCH TEST ----
@@ -485,9 +504,11 @@ def build_ui() -> gr.Blocks:
             # ---- TAB 3: COMPARE ----
             with gr.Tab("Compare with Reference"):
                 with gr.Row():
-                    cmp_seed = gr.Textbox(
+                    cmp_seed = gr.Dropdown(
+                        choices=EXAMPLE_SEEDS,
+                        value=EXAMPLE_SEEDS[0],
+                        allow_custom_value=True,
                         label="Seed to compare",
-                        value="fibonacci sequence with loops",
                     )
                     cmp_temp = gr.Slider(0.0, 1.0, 0.3, step=0.05, label="Temperature")
                     cmp_btn = gr.Button("Compare", variant="primary")
@@ -495,10 +516,10 @@ def build_ui() -> gr.Blocks:
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("#### Reference IR (golden)")
-                        cmp_ref = gr.Code(language="llvm", lines=20, interactive=False)
+                        cmp_ref = gr.Code(language="cpp", lines=20, interactive=False)
                     with gr.Column():
                         gr.Markdown("#### Generated IR")
-                        cmp_gen = gr.Code(language="llvm", lines=20, interactive=False)
+                        cmp_gen = gr.Code(language="cpp", lines=20, interactive=False)
                 gr.Markdown("#### Line-by-line diff ( * = different )")
                 cmp_diff = gr.Textbox(label="Diff", lines=15, interactive=False)
                 cmp_btn.click(
@@ -524,19 +545,25 @@ def build_ui() -> gr.Blocks:
                 gr.Markdown("""
                 # About
 
-                **LLVM IR Generator & Validator v2.0**
+                **LLVM IR Generator & Validator v2.1**
 
-                Uses Groq LLaMA 3.3 70B to generate LLVM IR from natural language,
-                validates it with `llvm-as` and `opt --verify`, executes it with `lli`,
-                and compares output to golden references.
+                An advanced, AI-powered tool that automatically generates valid, optimized LLVM IR from natural language descriptions. It validates the output using `llvm-as` and `opt`, executes it locally using `lli`, and checks output against golden references.
 
+                ## Powered by NVIDIA NIM (moonshotai/kimi-k2.6) 🚀
+                This version has been completely upgraded to run on **NVIDIA's API** using the powerful `kimi-k2.6` model for superior code generation capabilities.
+
+                ## What's New in v2.1
+                - **Premium Glassmorphism UI**: A complete overhaul of the user interface featuring beautiful typography and dark-mode gradients.
+                - **Auto-Correction Engine**: Uses a multi-attempt retry loop that reads LLVM compiler errors and feeds them back to the model for self-correction.
+                - **Robust Post-Processing**: Includes custom Python algorithms that automatically clean up LLVM syntax quirks (e.g. hoisting globals, re-ordering phi nodes, renaming duplicate registers, fixing C-string null-terminators).
+                
                 ## Requirements
-
                 - **LLVM 14+** (llvm-as, opt, lli on PATH)
                 - **Python 3.8+**
-                - **groq** package
-                - **gradio** package
-                - **GROQ_API_KEY** environment variable
+                - **NVIDIA_API_KEY** environment variable
+                - **gradio** framework
+
+                *Built for compiler enthusiasts, students, and system engineers.*
 
                 ## Quick Install
 
@@ -544,7 +571,6 @@ def build_ui() -> gr.Blocks:
                 pip install groq gradio
                 # Linux:   sudo apt install llvm clang
                 # macOS:   brew install llvm
-                # Windows: choco install llvm
                 ```
 
                 ## Features

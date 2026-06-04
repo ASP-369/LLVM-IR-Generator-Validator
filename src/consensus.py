@@ -77,7 +77,7 @@ def generate_with_consensus(
             candidate["gen_time"] = time.time() - start
 
             if validate:
-                is_valid, status, detail = validate_ir_text(ir)
+                is_valid, status, detail = validate_ir_text(ir, require_main=True)
                 candidate["is_valid"] = is_valid
                 if "SYNTAX" in status:
                     candidate["valid_syntax"] = is_valid
@@ -145,11 +145,11 @@ def generate_with_retry(
             - history (list): per-attempt results
     """
     from .prompts import SYSTEM_PROMPT, FEW_SHOT_EXAMPLE
-    from .generator import client
+    from .generator import _call_llm, _clean_ir_output, NVIDIA_API_KEY, GROQ_API_KEY
     import re
 
-    if not client.api_key:
-        raise KeyError("GROQ_API_KEY environment variable not set")
+    if not NVIDIA_API_KEY and not GROQ_API_KEY:
+        raise KeyError("No API key set. Set NVIDIA_API_KEY or GROQ_API_KEY.")
 
     history: List[Dict[str, Any]] = []
     final_ir: Optional[str] = None
@@ -190,21 +190,16 @@ def generate_with_retry(
 
         try:
             start = time.time()
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                temperature=temperature,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-            raw_ir = response.choices[0].message.content or ""
-            ir = re.sub(r"```[a-zA-Z]*\n?", "", raw_ir).replace("```", "").strip()
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ]
+            raw_ir = _call_llm(messages, temperature=temperature, max_tokens=max_tokens)
+            ir = _clean_ir_output(raw_ir)
             attempt_record["ir"] = ir
             attempt_record["gen_time"] = time.time() - start
 
-            is_valid, status, detail = validate_ir_text(ir)
+            is_valid, status, detail = validate_ir_text(ir, require_main=True)
             attempt_record["is_valid"] = is_valid
             attempt_record["status"] = status
 

@@ -196,11 +196,19 @@ def _validate_semantic(ir_path: str) -> Tuple[bool, str, str]:
     """
     try:
         result = subprocess.run(
-            ["opt", "-verify", "-disable-output", ir_path],
+            ["opt", "-passes=verify", "-disable-output", ir_path],
             capture_output=True,
             text=True,
             timeout=5,
         )
+        if result.returncode != 0 and "not supported" in result.stderr:
+            # Fallback for older LLVM versions
+            result = subprocess.run(
+                ["opt", "-verify", "-disable-output", ir_path],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
     except subprocess.TimeoutExpired:
         return False, "TIMEOUT", "opt timed out (>5 seconds)"
     except FileNotFoundError:
@@ -219,7 +227,7 @@ def _validate_semantic(ir_path: str) -> Tuple[bool, str, str]:
     return True, "SEMANTIC_OK", "Semantic validation passed."
 
 
-def validate_ir_text(ir_text: str) -> Tuple[bool, str, str]:
+def validate_ir_text(ir_text: str, require_main: bool = False) -> Tuple[bool, str, str]:
     """
     Validate LLVM IR from text (not file path).
 
@@ -227,10 +235,15 @@ def validate_ir_text(ir_text: str) -> Tuple[bool, str, str]:
 
     Args:
         ir_text (str): LLVM IR code as string
+        require_main (bool): If True, ensure @main is present
 
     Returns:
         Tuple[bool, str, str]: (is_valid, status, detail)
     """
+    if require_main:
+        if "define " not in ir_text or ("@main(" not in ir_text and "@main " not in ir_text):
+            return False, "MISSING_MAIN", "[Category] missing_main\n[Suggestion] The program is missing the main entry point. Always include define i32 @main()."
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".ll", delete=False) as f:
         f.write(ir_text)
         temp_path = f.name
